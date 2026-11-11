@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source-artifact:
+        description: Artifact containing a candidate sources.json from this run
+        required: false
+        default: ""
+        type: string
+      source-revision:
+        description: Exact repository revision used to prepare the candidate
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Updater tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source-revision || github.sha }}
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests
+
+  build:
+    name: Build (${{ matrix.system }})
+    needs: tests
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-24.04
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+          - system: x86_64-darwin
+            runner: macos-15-intel
+          - system: aarch64-darwin
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.source-revision || github.sha }}
+          persist-credentials: false
+      - name: Download candidate sources
+        if: inputs.source-artifact != ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.source-artifact }}
+      - uses: cachix/install-nix-action@7be5dee1421f63d07e71ce6e0a9f8a4b07c2a487 # v31.6.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check flake
+        run: nix flake check --print-build-logs --no-update-lock-file path:.
+      - name: Build package
+        env:
+          SYSTEM: ${{ matrix.system }}
+        # path:. includes the downloaded candidate, not just the Git snapshot.
+        run: nix build --no-link --print-build-logs --no-update-lock-file "path:.#packages.${SYSTEM}.default"

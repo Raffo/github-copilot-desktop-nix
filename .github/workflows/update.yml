@@ -1,0 +1,116 @@
+name: Update sources
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+# Update runs must never race each other or cancel a candidate during validation.
+concurrency:
+  group: update-sources
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare update
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      changed: ${{ steps.candidate.outputs.changed }}
+      version: ${{ steps.candidate.outputs.version }}
+      revision: ${{ steps.candidate.outputs.revision }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test updater
+        run: python3 -m unittest discover -s tests
+      - name: Check upstream release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./update.sh
+      - name: Describe candidate
+        id: candidate
+        shell: bash
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if git diff --quiet -- sources.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("sources.json", encoding="utf-8") as source:
+              version = json.load(source)["version"]
+          if not isinstance(version, str) or not version or "\n" in version or "\r" in version:
+              raise ValueError("version must be a nonempty, single-line string")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"version={version}", file=output)
+          PY
+      - name: Upload candidate
+        if: steps.candidate.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: updated-sources
+          path: sources.json
+          if-no-files-found: error
+          retention-days: 1
+
+  validate:
+    name: Validate candidate
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    # GITHUB_TOKEN pushes do not trigger push workflows. Validate all four
+    # native builds here, using exactly the artifact that will be committed.
+    uses: ./.github/workflows/ci.yml
+    with:
+      source-artifact: updated-sources
+      source-revision: ${{ needs.prepare.outputs.revision }}
+
+  commit:
+    name: Commit validated update
+    needs: [prepare, validate]
+    if: needs.prepare.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # No updater, build, or third-party install step receives a write token.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Reject stale candidate
+        env:
+          EXPECTED_REVISION: ${{ needs.prepare.outputs.revision }}
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$EXPECTED_REVISION" ]; then
+            echo "::error::Default branch changed during validation; rerun the updater."
+            exit 1
+          fi
+      - name: Download validated sources
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: updated-sources
+      - name: Commit and push
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- sources.json
+          if git diff --cached --quiet -- sources.json; then
+            exit 0
+          fi
+          git commit -m "chore: update GitHub Copilot Desktop to ${VERSION}"
+          # A concurrent branch change must fail rather than bypass validation.
+          git push origin "HEAD:refs/heads/${DEFAULT_BRANCH}"
