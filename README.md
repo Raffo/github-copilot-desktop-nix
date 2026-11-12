@@ -11,60 +11,67 @@ Copilot CLI or GitHub Desktop.
 | `x86_64-darwin` | Intel macOS `.app` archive |
 | `aarch64-darwin` | Apple Silicon macOS `.app` archive |
 
-## Try it locally
+## Build and run
 
-With Nix and flakes enabled:
-
-```sh
-nix build path:.
-nix run path:.
-# Alternatively:
-./result/bin/github-copilot-desktop
-```
-
-`path:.` includes the files before your first Git commit. After committing,
-`nix build .` and `nix run .` work too.
-
-Without flakes, using your configured `<nixpkgs>`:
+Classic, non-flake Nix packaging, following
+[`Raffo/pi-coding-agent-nix`](https://github.com/Raffo/pi-coding-agent-nix).
+No experimental Nix features are required.
 
 ```sh
 nix-build
 ./result/bin/github-copilot-desktop
 ```
 
-The flake pins Nixpkgs 26.05 in `flake.lock` to retain Intel macOS support.
-It permits this specific unfree package; it does not enable all unfree packages.
-The legacy entry point uses your own Nixpkgs, which must support your platform.
-
-After pushing this repository, replace `OWNER/REPO` below:
+Optional profile installation:
 
 ```sh
-nix run github:OWNER/REPO
-nix profile install github:OWNER/REPO
+nix-env -if .
 ```
 
-### NixOS / Home Manager
+The default build uses the exact Nixpkgs 26.05 revision and unpacked hash in
+`nixpkgs.json`, rather than your current channel. It permits only this unfree
+application. To use your own Nixpkgs and unfree policy:
 
-Add a flake input:
-
-```nix
-inputs.copilot-desktop.url = "github:OWNER/REPO";
+```sh
+nix-build --arg pkgs 'import <nixpkgs> { config.allowUnfreePredicate = pkg: (pkg.pname or "") == "github-copilot-desktop"; }'
 ```
 
-Then use its package in your module (pass `inputs` through `specialArgs` or
-`extraSpecialArgs`, as appropriate):
+## Overlay (NixOS / Home Manager)
+
+Clone this repository to a persistent local path:
+
+```sh
+git clone https://github.com/Raffo/github-copilot-desktop-nix.git
+```
+
+Use the same overlay pattern as `pi-coding-agent-nix` in your NixOS configuration
+(replace the path with your checkout):
 
 ```nix
-{ pkgs, inputs, ... }: {
-  environment.systemPackages = [
-    inputs.copilot-desktop.packages.${pkgs.stdenv.hostPlatform.system}.default
+{ pkgs, ... }:
+{
+  nixpkgs.overlays = [
+    (import /path/to/github-copilot-desktop-nix/overlay.nix)
   ];
+  nixpkgs.config.allowUnfreePredicate = pkg:
+    (pkg.pname or "") == "github-copilot-desktop";
+
+  environment.systemPackages = [ pkgs.github-copilot-desktop ];
 }
 ```
 
-For Home Manager, use `home.packages` instead of `environment.systemPackages`.
-The flake also exports `overlays.default`; when using the overlay, allow
-`github-copilot-desktop` in your own Nixpkgs unfree policy.
+Then run `sudo nixos-rebuild switch`. No flake inputs or `specialArgs` are needed.
+If you already allow unfree packages, keep your existing policy; if you use a
+predicate, add this package to it rather than replacing your existing allowlist.
+
+For standalone Home Manager, use the same overlay and unfree configuration with
+`home.packages = [ pkgs.github-copilot-desktop ];` instead. When Home Manager uses
+NixOS's package set (`home-manager.useGlobalPkgs = true`), configure the overlay
+and unfree policy in NixOS only.
+
+The overlay uses **your** Nixpkgs, not this repository's pin. The package is also
+callable directly with `pkgs.callPackage /path/to/package.nix { }`.
+Neither entry point overrides your unfree policy.
 
 ## Desktop integration and limitations
 
@@ -75,7 +82,8 @@ The flake also exports `overlays.default`; when using the overlay, allow
   security sandbox**; the coding agent can access your user files.
 - Installing the Linux package exposes its launcher, icon, and upstream URL
   schemes (`github-app`, `ghapp`, `gh`). A desktop session is required to use
-  the GUI. A plain `nix run` does not register URL handlers in your session.
+  the GUI. Running the launcher from `./result` alone does not register URL
+  handlers in your session.
   If your desktop does not pick up the installed handler automatically:
 
   ```sh
@@ -155,16 +163,28 @@ Review and build before committing:
 
 ```sh
 python3 -m unittest discover -s tests -v
-nix flake check path:.
+nix-build --option experimental-features ''
+nix-build tests/package.nix --no-out-link --option experimental-features ''
 git diff -- sources.json
 ```
 
-Nixpkgs is **not** updated by the release job. Update `flake.lock` separately:
+Nixpkgs is **not** updated by the release job. Refresh `nixpkgs.json` deliberately:
 
 ```sh
-nix flake update
-nix flake check path:.
+rev=$(curl -fsSL https://channels.nixos.org/nixos-26.05/git-revision)
+hash=$(nix-prefetch-url --unpack "https://github.com/NixOS/nixpkgs/archive/$rev.tar.gz")
+python3 - "$rev" "$hash" <<'PY'
+import json, sys
+with open("nixpkgs.json", "w") as f:
+    json.dump(dict(rev=sys.argv[1], sha256=sys.argv[2]), f, indent=2)
+    f.write("\n")
+PY
+nix-build
 ```
+
+For development, `nix-shell` provides Python, nixfmt, shellcheck, and update tools.
+`tests/package.nix` builds through the overlay and checks installed desktop assets.
+CI builds both entry points with experimental features disabled.
 
 CI also runs on pushes and pull requests. Actions dependencies are pinned to
 commit SHAs; Dependabot checks those pins weekly.

@@ -62,10 +62,9 @@ jobs:
       - uses: cachix/install-nix-action@7be5dee1421f63d07e71ce6e0a9f8a4b07c2a487 # v31.6.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check flake
-        run: nix flake check --print-build-logs --no-update-lock-file path:.
-      - name: Build package
-        env:
-          SYSTEM: ${{ matrix.system }}
-        # path:. includes the downloaded candidate, not just the Git snapshot.
-        run: nix build --no-link --print-build-logs --no-update-lock-file "path:.#packages.${SYSTEM}.default"
+          extra_nix_config: |
+            experimental-features =
+      - name: Build package (no experimental features)
+        run: nix-build --option experimental-features ''
+      - name: Check overlay and desktop layout
+        run: nix-build tests/package.nix --no-out-link --option experimental-features ''
