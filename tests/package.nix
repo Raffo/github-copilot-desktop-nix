@@ -8,6 +8,7 @@
 let
   package = pkgs.github-copilot-desktop;
 in
+assert pkgs.github-copilot-desktop-nix.drvPath == package.drvPath;
 pkgs.runCommand "github-copilot-desktop-layout-check"
   {
     nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [

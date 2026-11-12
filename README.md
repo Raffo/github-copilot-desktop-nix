@@ -60,6 +60,12 @@ Use the same overlay pattern as `pi-coding-agent-nix` in your NixOS configuratio
 }
 ```
 
+The package attribute is `pkgs.github-copilot-desktop`; the repository name
+`pkgs.github-copilot-desktop-nix` is also available as an alias. Both require the
+overlay above; cloning or building this repository alone does not add attributes
+to your NixOS package set. With older versions of the overlay, use
+`pkgs.github-copilot-desktop` to avoid an “attribute missing” error.
+
 Then run `sudo nixos-rebuild switch`. No flake inputs or `specialArgs` are needed.
 If you already allow unfree packages, keep your existing policy; if you use a
 predicate, add this package to it rather than replacing your existing allowlist.
