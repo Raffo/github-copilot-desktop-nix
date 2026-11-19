@@ -1,20 +1,20 @@
 {
-  "version": "1.4.2",
-  "tag": "v1.4.2",
+  "version": "1.4.3",
+  "tag": "v1.4.3",
   "x86_64-linux": {
     "name": "GitHub-Copilot-linux-x64.AppImage",
-    "hash": "sha256-SR5JY+t5LaPbM0deoCoxETwBnuaRsW59kdZAiCzN78Q="
+    "hash": "sha256-bTGcLapTwEcicyYDSBNBgMGhYPsMkKcAXCQ+GCRrGbA="
   },
   "aarch64-linux": {
     "name": "GitHub-Copilot-linux-arm64.AppImage",
-    "hash": "sha256-4+bgbyvgx5S6oyjZGJQTWdbtD+ktULom4lgoO8Jo4Es="
+    "hash": "sha256-ui5xH/wTKQthu441LBYb67cMdQc0G9r6ohYuXwZmJe4="
   },
   "x86_64-darwin": {
     "name": "GitHub-Copilot-darwin-x64.tar.gz",
-    "hash": "sha256-CPuw8329cNxjH0LgOPqpqNSEYgtm4oWKZ3VDgsaLzyQ="
+    "hash": "sha256-sJZv8whsOHURVD2w9l2xPN1QnIYClXFToT49sffssWc="
   },
   "aarch64-darwin": {
     "name": "GitHub-Copilot-darwin-arm64.tar.gz",
-    "hash": "sha256-z4VhyZBy9a9s3VApZ/+D6Ee6pMzGCXnLHJxaTwvFTmE="
+    "hash": "sha256-9pfYwDtg2tqkZCZtq6uXwNhc4/Lx539/ocPzkvcVpY4="
   }
 }
